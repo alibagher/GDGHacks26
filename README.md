@@ -2,5 +2,5 @@
 
 Real-world Makeup Manipulation
 
-Started with C++, Pivot to Python because of driver issues.
+Projector-Camera systems have the ability to create real-world simulations. This technology can be used to change human faces used in cosmetics, entertainment (movies) saving time and money.
 
