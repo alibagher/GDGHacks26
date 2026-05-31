@@ -8,6 +8,7 @@ calibrated = False
 H = None
 manual_cam_pts = []
 
+# Initialize new Tasks-based Tracker
 tracker = FaceLipTracker()
 
 cv2.namedWindow("Projector", cv2.WINDOW_NORMAL)
@@ -39,41 +40,30 @@ while True:
         if len(manual_cam_pts) == 4:
             H, _ = cv2.findHomography(np.array(manual_cam_pts, dtype=np.float32), proj_pts)
             calibrated = True
-    
     else:
-        # 1. TRACK (Sensing)
+        # Pull dense landmark calculations
         tracking_data = tracker.get_lip_points(frame)
         
         if tracking_data is not None:
             all_coords, lip_coords = tracking_data
-            
-            # 2. CREATE CAMERA-SPACE MASK (This is your 'red_mask' equivalent)
-            # We create a black image the EXACT size of your camera feed
-            cam_lip_mask = np.zeros((frame.shape[0], frame.shape[1]), dtype=np.uint8)
-            
-            # Convert Dlib points to integers for OpenCV drawing
+            cam_h, cam_w = frame.shape[0], frame.shape[1]
+
+            # 1. Rasterize tracking data into a clean binary mask
+            cam_lip_mask = np.zeros((cam_h, cam_w), dtype=np.uint8)
             lip_poly = lip_coords[0].astype(np.int32)
-            
-            # Draw the 'lipstick' area on the camera-sized mask
             cv2.fillPoly(cam_lip_mask, [lip_poly], 255)
 
-            # 3. THE CVD ALIGNMENT STEP (The Magic)
-            # We warp the ENTIRE camera-sized mask to the projector-sized canvas
-            # using the H matrix from your 4-point calibration.
+            # 2. Map coordinates safely via spatial homography
             warped_mask = cv2.warpPerspective(cam_lip_mask, H, (proj_w, proj_h))
+            warped_mask = warped_mask.astype(np.uint8)
 
-            # 4. DILATE (Your 'Halo' effect for better coverage)
-            kernel = np.ones((5,5), np.uint8)
-            warped_mask = cv2.dilate(warped_mask, kernel, iterations=1)
-
-            # 5. APPLY COLOR
-            # This mimics your 'bitwise_and' with the grid_base
+            # 3. Stitch crimson fill onto output canvas
             lipstick_color = np.full((proj_h, proj_w, 3), (50, 50, 200), dtype=np.uint8)
             display = cv2.bitwise_and(lipstick_color, lipstick_color, mask=warped_mask)
 
-            # Debug View (laptop screen)
+            # 4. Render dense tracking matrix on laptop screen for telemetry verification
             for pt in all_coords[0]:
-                cv2.circle(debug_frame, (int(pt[0]), int(pt[1])), 2, (0, 255, 0), -1)
+                cv2.circle(debug_frame, (int(pt[0]), int(pt[1])), 1, (0, 255, 0), -1)
 
     cv2.imshow("Projector", display)
     cv2.imshow("Debug View", debug_frame)

@@ -1,44 +1,60 @@
-import dlib
-import numpy as np
 import cv2
+import numpy as np
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
 class FaceLipTracker:
     def __init__(self):
-        # Initialize dlib's face detector
-        self.detector = dlib.get_frontal_face_detector()
+        # 1. Configure the modern MediaPipe Task options
+        # Points directly to the downloaded model bundle file in your folder
+        model_path = 'face_landmarker.task'
         
-        # Load the predictor (Ensure this .dat file is in your folder!)
-        try:
-            self.predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
-            print("Dlib Tracker Initialized Successfully!")
-        except Exception as e:
-            print(f"FATAL ERROR: shape_predictor_68_face_landmarks.dat not found. {e}")
-            self.predictor = None
-
-        # Dlib indices for the outer boundary of the lips
-        self.OUTER_LIP_INDICES = list(range(48, 60))
-
+        base_options = python.BaseOptions(model_asset_path=model_path)
+        
+        # FIX: Removed 'output_face_landmarks=True' as it is implicit
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            output_face_blendshapes=False, 
+            output_facial_transformation_matrixes=False,
+            num_faces=1
+        )
+        
+        # 2. Build the detector object
+        self.detector = vision.FaceLandmarker.create_from_options(options)
+        
+        # Explicit landmark indices tracking the tight outer vermilion border of the lips
+        self.OUTER_LIP_INDICES = [
+            61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 
+            308, 415, 310, 311, 312, 13, 82, 81, 80, 191
+        ]
+        print("MediaPipe Tasks Dense FaceMesh Engine Initialized!")
     def get_lip_points(self, frame):
-        if self.predictor is None:
+        h, w, _ = frame.shape
+        
+        # Convert OpenCV's BGR layout to MediaPipe's Image wrapper format
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        
+        # Run inference synchronously
+        detection_result = self.detector.detect(mp_image)
+        
+        if not detection_result.face_landmarks:
             return None
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = self.detector(gray)
+        face_landmarks = detection_result.face_landmarks[0]
         
-        if len(faces) == 0:
-            return None
-
-        # Process the first face (the printout)
-        shape = self.predictor(gray, faces[0])
-        
-        # All 68 points for the Debug View
+        # 1. Parse all 468+ points for full framework Debug View
         all_pts = []
-        for i in range(0, 68):
-            all_pts.append([shape.part(i).x, shape.part(i).y])
+        for landmark in face_landmarks:
+            cx, cy = int(landmark.x * w), int(landmark.y * h)
+            all_pts.append([cx, cy])
             
-        # Specific lip points for the Projector Mask
+        # 2. Isolate target lips mask points
         lip_pts = []
-        for i in self.OUTER_LIP_INDICES:
-            lip_pts.append([shape.part(i).x, shape.part(i).y])
+        for idx in self.OUTER_LIP_INDICES:
+            landmark = face_landmarks[idx]
+            cx, cy = int(landmark.x * w), int(landmark.y * h)
+            lip_pts.append([cx, cy])
             
         return np.array([all_pts], dtype=np.float32), np.array([lip_pts], dtype=np.float32)
